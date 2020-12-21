@@ -2,3 +2,11 @@ tests:
   subsys.greybus.gpio:
     tags: greybus
     harness: ztest
+  subsys.greybus.gpio.tls:
+    tags: greybus tls
+    harness: ztest
+    extra_configs:
+      - CONFIG_GREYBUS_ENABLE_TLS=y
+      - CONFIG_GREYBUS_TLS_BUILTIN=y
+      - CONFIG_NET_SOCKETS_SOCKOPT_TLS=y
+      - CONFIG_TLS_CREDENTIALS=y

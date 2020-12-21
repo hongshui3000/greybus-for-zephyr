@@ -6,10 +6,8 @@
 
 menuconfig GREYBUS
 	bool "Greybus"
-	select PTHREAD_IPC
-	depends on !NET_HOSTNAME_ENABLE || (NET_HOSTNAME_ENABLE && NETWORKING)
-	select THREAD_NAME
-	select PTHREAD_DYNAMIC_STACK
+	depends on PTHREAD_DYNAMIC_STACK
+	depends on PTHREAD_IPC
 	help
 	  This option enables Greybus support.
 
@@ -29,17 +27,103 @@ config GREYBUS_MANIFEST_BUILTIN
 	  data.
 endchoice
 
+config GREYBUS_ENABLE_TLS
+	bool "Use Transport Layer Security (TLS)"
+	depends on TLS_CREDENTIALS
+	depends on NET_SOCKETS_SOCKOPT_TLS
+	help
+	  Choose this option to use industry standard
+	  TLS 1.2 authentication and encryption with
+	  Greybus.
+
+if GREYBUS_ENABLE_TLS
+
+choice
+	prompt "TLS Client Verification"
+	default GREYBUS_TLS_CLIENT_VERIFY_NONE
+
+config GREYBUS_TLS_CLIENT_VERIFY_NONE
+	bool "No Client Verification"
+	help
+	  Choose this option so that Greybus never attmpts to verify
+	  client credentials.
+
+config GREYBUS_TLS_CLIENT_VERIFY_OPTIONAL
+	bool "Optional Client Verification"
+	help
+	  Choose this option so that Greybus only attmpts to verify
+	  client credentials if they provide them.
+
+config GREYBUS_TLS_CLIENT_VERIFY_REQUIRED
+	bool "Required Client Verification"
+	help
+	  Choose this option so that Greybus reuires clients to present
+	  verifiable credentials.
+endchoice
+
+choice
+	prompt "How will TLS credentials be supplied?"
+	default GREYBUS_TLS_BUILTIN
+	
+config GREYBUS_TLS_BUILTIN
+	bool "Compile certificates into the application"
+	help
+	  This option compiles all certificates into the application
+	  by converting the specified files into C arrays.
+	  
+	  It should be noted that this is NOT SECURE.
+endchoice
+
+if GREYBUS_TLS_BUILTIN
+config GREYBUS_TLS_BUILTIN_CA_CERT
+	string "Path to the CA certificate"
+	default "${ZEPHYR_BASE}/samples/net/sockets/echo_server/src/ca.der"
+	help
+	  The path to the Certificate Signing-Authority certificate
+
+config GREYBUS_TLS_BUILTIN_SERVER_CERT
+	string "Path to the Greybus server certificate"
+	default "${ZEPHYR_BASE}/samples/net/sockets/echo_server/src/server.der"
+	help
+	  The path to the Greybus Server certificate (public key)
+
+config GREYBUS_TLS_BUILTIN_SERVER_PRIVKEY
+	string "Path to the Greybus server private key"
+	default "${ZEPHYR_BASE}/samples/net/sockets/echo_server/src/server_privkey.der"
+	help
+	  The path to the Greybus Server private key
+
+config GREYBUS_TLS_BUILTIN_AUTHORIZED_KEYS
+	string "Semicolon-separated paths of authorized public keys"
+	default "${ZEPHYR_BASE}/samples/net/sockets/echo_client/src/echo-apps-cert.der"
+	help
+	  Similar to the way that SSH parses ~/.ssh/authorized_keys,
+	  this is a semicolon-separated list of paths to public keys
+	  of clients that are authorized to connect to the Greybus
+	  Service.
+	  
+	  Any connections that are initiated for public keys
+	  that are not in this list will be terminated immediate
+	  following authentication failure.
+endif # GREYBUS_TLS_BUILTIN
+endif # GREYBUS_ENABLE_TLS
+
 choice
 	prompt "Which transport shall be used for Greybus?"
 	default GREYBUS_XPORT_TCPIP
 
 config GREYBUS_XPORT_TCPIP
 	bool "Use the TCP/IP Transport for Greybus"
+	depends on NET_TCP
+	depends on NET_SOCKETS
+	depends on NET_SOCKETS_POSIX_NAMES
 	help
 	  This creates a TCP/IP service for Greybus.
 
 config GREYBUS_XPORT_UART
 	bool "Use the UART Transport for Greybus"
+	depends on SERIAL
+	depends on SERIAL_HAS_DRIVER
 	help
 	  This creates a thread for Greybus on a specific UART.
 
@@ -50,119 +134,85 @@ config GREYBUS_XPORT_UART_DEV
 	help
 	  This setting specifies which UART the Greybus service will use.
 endif # GREYBUS_XPORT_UART
-
 endchoice
 
 config GREYBUS_AUDIO
 	bool "Greybus Audio"
-	default n
 	help
 	  Select this for Greybus Audio support.
 
 config GREYBUS_CAMERA
 	bool "Greybus Camera"
-	default n
 	help
 	  Select this for Greybus Camera support.
 
 config GREYBUS_CONTROL
 	bool "Greybus Control"
-	default n
 	help
 	  Select this for a Greybus Control cport.
 
-config GREYBUS_DEBUG
-	bool "Debug Greybus"
-	default n
-	help
-	  Select this to debug Greybus.
-
-config GREYBUS_LOG_FUNC
-	bool "Greybus Debug with Function Name"
-	default n
-	help
-	  Select this option to show the function name in Greybus debug messages.
-
-config GREYBUS_LOG_FILE
-	bool "Greybus Debug with File Name"
-	default y
-	help
-	  Select this option to show the filename and line number in Greybus debug messages.
-
 config GREYBUS_GPIO
 	bool "Greybus GPIO"
-	default n
 	help
 	  Select this for Greybus GPIO support.
 
 config GREYBUS_HID
 	bool "Greybus HID"
-	default n
 	help
 	  Select this for Greybus HID support.
 
 config GREYBUS_I2C
-	bool "Greybus I2C support"
-	default n
+	bool "Greybus I2C"
 	help
 	  Select this for Greybus I2C support.
 
 config GREYBUS_LIGHTS
 	bool "Greybus Lights"
-	default n
 	help
 	  Select this for Greybus Light support.
 
 config GREYBUS_LOOPBACK
 	bool "Greybus Loopback"
-	default n
 	help
 	  Select this for Greybus Loopback support.
 
 config GREYBUS_POWER_SUPPLY
 	bool "Greybus Power Supply"
-	default n
 	help
 	  Select this for Greybus Power Supply support.
 
 config GREYBUS_PWM
 	bool "Greybus PWM"
-	default n
 	help
 	  Select this for Greybus Pulse Width Modulation support.
 
 config GREYBUS_SDIO
 	bool "Greybus SDIO"
-	default n
 	help
 	  Select this for Greybus Secure Digital IO support.
 
 config GREYBUS_SPI
 	bool "Greybus SPI"
-	default n
 	help
 	  Select this for Greybus Serial Peripheral Interface support.
 
 config GREYBUS_UART
 	bool "Greybus UART"
-	default n
 	help
 	  Select this for Greybus Universal Asynchronous Receiver Transmitter support.
 
 config GREYBUS_USB
 	bool "Greybus USB"
-	default n
 	help
 	  Select this for Greybus Universal Serial Bus support.
 
 config GREYBUS_VIBRATOR
 	bool "Greybus Vibrator"
-	default n
 	help
 	  Select this for Greybus Vibrator support.
 
 module = GREYBUS
-module-str = gb
+module-str = Greybus
 source "subsys/logging/Kconfig.template.log_config"
 
 endif # GREYBUS

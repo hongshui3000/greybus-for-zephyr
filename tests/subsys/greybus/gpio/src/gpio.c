@@ -24,6 +24,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#define IPPROTO_TLS_1_2 258
+
 /* For some reason, including <net/net_ip.h> breaks everything
  * I only need these */
 static inline struct sockaddr_in *net_sin(struct sockaddr *sa)
@@ -47,10 +49,13 @@ static inline struct sockaddr_in6 *net_sin6(struct sockaddr *sa)
 
 #endif
 
+#include <net/hostname.h>
+
 #include <logging/log.h>
 LOG_MODULE_REGISTER(greybus_test_gpio, CONFIG_GREYBUS_LOG_LEVEL);
 
 /* slightly annoying */
+#include "../../../../../subsys/greybus/platform/certificate.h"
 #include "../../../../../subsys/greybus/gpio-gb.h"
 
 #include "test-greybus-gpio.h"
@@ -80,18 +85,29 @@ void test_greybus_setup(void) {
     socklen_t sa_len;
     int family;
     uint16_t *port;
+	int proto = IPPROTO_TCP;
     int r;
+
+	if (IS_ENABLED(CONFIG_GREYBUS_ENABLE_TLS)) {
+		proto = IPPROTO_TLS_1_2;
+	}
 
 	if (IS_ENABLED(CONFIG_NET_IPV6)) {
 		family = AF_INET6;
 		net_sin6(&sa)->sin6_family = AF_INET6;
-		inet_pton(family, MY_IPV6_ADDR, &net_sin6(&sa)->sin6_addr);
+		r = inet_pton(family, MY_IPV6_ADDR,
+			&net_sin6(&sa)->sin6_addr);
+		__ASSERT(r == 1, "%s is not a valid IPv6 address",
+			MY_IPV6_ADDR);
 		port = &net_sin6(&sa)->sin6_port;
 		sa_len = sizeof(struct sockaddr_in6);
 	} else if (IS_ENABLED(CONFIG_NET_IPV4)) {
 		family = AF_INET;
 		net_sin(&sa)->sin_family = AF_INET;
-		inet_pton(family, MY_IPV4_ADDR, &net_sin(&sa)->sin_addr);
+		r = inet_pton(family, MY_IPV4_ADDR,
+			&net_sin(&sa)->sin_addr);
+		__ASSERT(r == 1, "%s is not a valid IPv4 address",
+			MY_IPV4_ADDR);
 		port = &net_sin(&sa)->sin_port;
 		sa_len = sizeof(struct sockaddr_in);
 	} else {
@@ -106,12 +122,29 @@ void test_greybus_setup(void) {
 	gpio_dev = (struct device *)device_get_binding(GPIO_DEV_NAME);
 	zassert_not_equal(gpio_dev, NULL, "failed to get device binding for " GPIO_DEV_NAME);
 
-    r = socket(family, SOCK_STREAM, 0);
-    __ASSERT(r >= 0, "connect: %d", errno);
-    fd = r;
+	r = socket(family, SOCK_STREAM, proto);
+	__ASSERT(r >= 0, "socket: %d", errno);
+	fd = r;
 
-    r = connect(fd, &sa, sa_len);
-    __ASSERT(r == 0, "connect: %d", errno);
+	if (IS_ENABLED(CONFIG_GREYBUS_ENABLE_TLS)) {
+    		/*
+	    	 * Normally, a call to tls_credential_get(GB_TLS_CA_CERT_TAG...
+	    	 * would be required at this point, but it has already been
+	    	 * loaded by the server in this test, so we skip it.
+    		 *
+	    	 * We still need to mark the tag as available for the client
+    		 * socket though.
+	    	 */
+		static const sec_tag_t sec_tag_opt[] = {
+			GB_TLS_CA_CERT_TAG,
+		};
+
+		r = setsockopt(fd, SOL_TLS, TLS_SEC_TAG_LIST, sec_tag_opt, sizeof(sec_tag_opt));
+		__ASSERT(r != -1, "setsockopt: Failed to set SEC_TAG_LIST (%d)", errno);
+	}
+
+	r = connect(fd, &sa, sa_len);
+	__ASSERT(r == 0, "connect: %d", errno);
 }
 
 void test_greybus_teardown(void) {
@@ -132,7 +165,7 @@ static void tx_rx(const struct gb_operation_hdr *req, struct gb_operation_hdr *r
 
     size = sys_le16_to_cpu(req->size);
     r = send(fd, req, size, 0);
-    zassert_not_equal(r, -1, "send: %s", errno);
+    zassert_not_equal(r, -1, "send: %d", errno);
     zassert_equal(r, size, "write: expected: %d actual: %d", size, r);
 
     for(;;) {
@@ -140,20 +173,17 @@ static void tx_rx(const struct gb_operation_hdr *req, struct gb_operation_hdr *r
 		pollfd.fd = fd;
 		pollfd.events = POLLIN;
 
-		LOG_DBG("calling poll on 1 file");
 		r = poll(&pollfd, 1, TIMEOUT_MS);
-		LOG_DBG("poll returned %d", r);
 		if (r == 0) {
-			LOG_DBG("poll returned 0 (timeout?)");
+			// there was a timeout... wait, really??
 			continue;
 		}
+
 		zassert_not_equal(r, -1, "poll: %s", errno);
 		//zassert_not_equal(r, 0, "timeout waiting for response");
 		zassert_equal(r, 1, "invalid number of pollfds with data: %d", r);
 
-		LOG_DBG("calling recv on fd %d", fd);
 		r = recv(fd, rsp, hdr_size, 0);
-		LOG_DBG("recv returned %d", r);
 		zassert_not_equal(r, -1, "recv: %s", errno);
 		zassert_equal(hdr_size, r, "recv: expected: %u actual: %u", (unsigned)hdr_size, r);
 

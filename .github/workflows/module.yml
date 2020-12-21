@@ -52,7 +52,7 @@ jobs:
     #    west build -b native_posix_64 -p always ${GB}/tests/subsys/greybus/gpio
     #    ./build/zephyr/zephyr.exe
 
-    - name: GPIO (qemu)
+    - name: GPIO
       run: |
         cd ${ZEPHYR_BASE}
         twister -i -p qemu_cortex_m3 -T ${GB}/tests/subsys/greybus/gpio
